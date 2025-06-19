@@ -1,0 +1,9 @@
+"AddonInfo"
+{
+	"addontitle"			"Neko's No Player Wait"
+	"addonDescription"		"Removes Waiting For Players"
+	"addonversion"			"1.0.0"
+	"addonauthor"			"NekoUwUGamerfnf"
+
+	"addonContent_Script"	"1"
+}
