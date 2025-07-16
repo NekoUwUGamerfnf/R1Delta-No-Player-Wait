@@ -2185,7 +2185,7 @@ function ReadyToStart()
 
     // Require more than 1 player total
     local totalPlayers = GetTeamPlayerCount( TEAM_IMC ) + GetTeamPlayerCount( TEAM_MILITIA )
-    if ( totalPlayers <= 0 )
+    if ( totalPlayers <= 0 || !GetConVarInt( "sv_lobbyType" ) )
         return false
 
 
