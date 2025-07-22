@@ -1,3 +1,3 @@
 # R1Delta-No-Player-Wait
 
-Removes Waiting For Players
+Removes the requirement for 2 players on dedicated servers
