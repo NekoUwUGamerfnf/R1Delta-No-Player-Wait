@@ -2290,93 +2290,162 @@ function CodeCallback_OnPlayerRespawned( player )
 		}
 	}
 	// Standard autobalance for other modes
-	else if ( GetConVarBool( "delta_autoBalanceTeams" ) && GamePlayingOrSuddenDeath() && GAMETYPE != FFA && player.s.respawnCount > 1 )
+	else if ( GetConVarBool( "delta_autoBalanceTeams" ) )
 	{
-		local currentTeam = player.GetTeam()
-		local otherTeam = GetOtherTeam( currentTeam )
-		local currentTeamCount = GetTeamPlayerCount( currentTeam )
-		local otherTeamCount = GetTeamPlayerCount( otherTeam )
-		local totalPlayers = currentTeamCount + otherTeamCount
-		local targetPerTeam = ceil( totalPlayers / 2.0 )
-
-		// Check if current team is over target and other team is under target
-		if ( currentTeamCount > targetPerTeam && otherTeamCount < targetPerTeam )
-		{
-			printt( "AutoBalancing player " + player.GetPlayerName() + " from team " + currentTeam + " to team " + otherTeam )
-
-			// Store pet titan before switching
-			local petTitan = player.GetPetTitan()
-
-			// Switch player team
-			player.TrueTeamSwitch()
-			local newTeam = player.GetTeam() // Get the new team after switching
-
-			// Switch pet titan team if it exists
-			if ( IsValid( petTitan ) && IsAlive( petTitan ) )
-			{
-				printt( "AutoBalancing pet titan for player " + player.GetPlayerName() + " to team " + newTeam )
-				petTitan.SetTeam( newTeam )
-				// Update titan's title and minimap icon for the new team context
-				SetupNPC_TitanTitle( petTitan, player )
-				// Ensure the titan's model/skin reflects the new team if necessary (though usually handled by SetupNPC_TitanTitle or initial spawn)
-				local soul = petTitan.GetTitanSoul()
-				if ( IsValid( soul ) )
-				{
-					local settings = GetSoulPlayerSettings(soul)
-					ApplyModelSkinToEntity( petTitan, settings, newTeam ) // Use the entity-applying function
-				}
-
-			}
-
-			// Update player model based on new team
-			local pilotDataTable = GetPlayerClassDataTable( player, level.pilotClass )
-			if ( pilotDataTable.playerSetFile )
-			{
-				player.SetPlayerSettings( pilotDataTable.playerSetFile ) // Re-apply settings to potentially trigger model updates
-				player.SetPlayerPilotSettings( pilotDataTable.playerSetFile )
-
-				local modelFieldName
-				if ( newTeam == TEAM_MILITIA )
-				{
-					modelFieldName = "bodymodel_militia"
-				}
-				else // Assume IMC or other default
-				{
-					modelFieldName = "bodymodel_imc"
-				}
-
-				local correctModelName = GetPlayerSettingsFieldForClassName( pilotDataTable.playerSetFile, modelFieldName )
-				if ( correctModelName != null && correctModelName != "" )
-				{
-					printt( "Autobalance: Setting model for player " + player + " (New Team: " + newTeam + ") using " + modelFieldName + " from " + pilotDataTable.playerSetFile + " -> " + correctModelName )
-					player.SetModel( correctModelName )
-
-					local skin = 0
-					if ( pilotDataTable.playerSetFile.find("female") != null )
-						skin = newTeam == TEAM_MILITIA ? 1 : 0
-					else
-						skin = 0 // Assuming non-female models use skin 0 regardless of team, adjust if needed
-
-					player.SetSkin( skin )
-					printt("Autobalance: SET SKIN " + skin)
-
-					local head = 0 // Reset head based on skin logic
-					if ( pilotDataTable.playerSetFile.find("female") != null )
-						head = newTeam == TEAM_MILITIA ? 1 : 0
-					else
-						head = 0
-					SelectHead(player, head)
-				}
-				else
-				{
-					printt( "Autobalance: WARNING - Could not determine correct model name for player " + player + " using playerSetFile '" + pilotDataTable.playerSetFile + "' and field '" + modelFieldName + "'" )
-				}
-			}
-
-			NotifyClientsOfTeamChange( player, currentTeam, newTeam ) // Notify clients about the team change
-		}
+		AutoBalancePlayer( player )
 	}
 	// --- End Autobalance on Respawn ---
+}
+
+// TODO: dont use this yet, its still missing a lot of checks for if the player is still alive and doing something
+function AutoBalancePlayer_Delayed( player, delay, forceSwitch = false )
+{
+	player.EndSignal( "OnDeath" )
+	player.EndSignal( "OnDestroy" )
+
+	MessageToPlayer( player, eEventNotifications.YouWillBeAutobalanced, null, Time() + delay )
+	wait delay
+
+	AutoBalancePlayer( player, forceSwitch )
+}
+
+function AutoBalancePlayer( player, forceSwitch = false )
+{
+	if ( !ShouldAutoBalancePlayer( player ) )
+		return
+
+	local currentTeam = player.GetTeam()
+	local otherTeam = GetOtherTeam( currentTeam )
+	local currentTeamCount = GetTeamPlayerCount( currentTeam )
+	local otherTeamCount = GetTeamPlayerCount( otherTeam )
+	local totalPlayers = currentTeamCount + otherTeamCount
+	local targetPerTeam = ceil( totalPlayers / 2.0 )
+
+	local isTitan = player.IsTitan()
+
+	// Check if current team is over target and other team is under target
+	// TODO: potentially check the players KDR and autobalance them if its too crazy?
+	if ( forceSwitch || ( currentTeamCount > targetPerTeam && otherTeamCount < targetPerTeam ) )
+	{
+		printt( "AutoBalancing player " + player.GetPlayerName() + " from team " + currentTeam + " to team " + otherTeam )
+
+		// For things like dropping the CTF flag before switching teams
+		foreach ( callbackInfo in level.onPreAutoBalanceCallbacks )
+		{
+			callbackInfo.func.acall( [callbackInfo.scope, player, currentTeam, otherTeam ] )
+		}
+
+		// Store pet titan before switching
+		local petTitan = player.GetPetTitan()
+
+		// Switch player team
+		player.TrueTeamSwitch()
+		local newTeam = player.GetTeam() // Get the new team after switching
+
+		// Switch pet titan team if it exists
+		if ( IsValid( petTitan ) && IsAlive( petTitan ) )
+		{
+			printt( "AutoBalancing pet titan for player " + player.GetPlayerName() + " to team " + newTeam )
+			petTitan.SetTeam( newTeam )
+			// Update titan's title and minimap icon for the new team context
+			SetupNPC_TitanTitle( petTitan, player )
+			// Ensure the titan's model/skin reflects the new team if necessary (though usually handled by SetupNPC_TitanTitle or initial spawn)
+			local soul = petTitan.GetTitanSoul()
+			if ( IsValid( soul ) )
+			{
+				local settings = GetSoulPlayerSettings(soul)
+				ApplyModelSkinToEntity( petTitan, settings, newTeam ) // Use the entity-applying function
+			}
+		}
+
+		local neededClass = level.pilotClass
+		if ( isTitan )
+			neededClass = "titan"
+
+		// Update player model based on new team
+		local classDataTable = GetPlayerClassDataTable( player, neededClass )
+		if ( classDataTable.playerSetFile )
+		{
+			player.SetPlayerSettings( classDataTable.playerSetFile ) // Re-apply settings to potentially trigger model updates
+
+			if ( !isTitan )
+				player.SetPlayerPilotSettings( classDataTable.playerSetFile )
+
+			local modelFieldName
+			if ( newTeam == TEAM_MILITIA )
+			{
+				modelFieldName = "bodymodel_militia"
+			}
+			else // Assume IMC or other default
+			{
+				modelFieldName = "bodymodel_imc"
+			}
+
+			local correctModelName = GetPlayerSettingsFieldForClassName( classDataTable.playerSetFile, modelFieldName )
+			if ( correctModelName != null && correctModelName != "" )
+			{
+				printt( "Autobalance: Setting model for player " + player + " (New Team: " + newTeam + ") using " + modelFieldName + " from " + classDataTable.playerSetFile + " -> " + correctModelName )
+				player.SetModel( correctModelName )
+
+				local skin = 0
+				if ( classDataTable.playerSetFile.find("female") != null || isTitan )
+					skin = newTeam == TEAM_MILITIA ? 1 : 0
+				else
+					skin = 0 // Assuming non-female models use skin 0 regardless of team, adjust if needed
+
+				player.SetSkin( skin )
+				printt("Autobalance: SET SKIN " + skin)
+
+				local head = 0 // Reset head based on skin logic
+				if ( classDataTable.playerSetFile.find("female") != null )
+					head = newTeam == TEAM_MILITIA ? 1 : 0
+				else
+					head = 0
+				SelectHead(player, head)
+			}
+			else
+			{
+				printt( "Autobalance: WARNING - Could not determine correct model name for player " + player + " using playerSetFile '" + classDataTable.playerSetFile + "' and field '" + modelFieldName + "'" )
+			}
+		}
+
+		NotifyClientsOfTeamChange( player, currentTeam, newTeam ) // Notify clients about the team change
+
+		thread PostAutobalanceThink( player )
+
+		foreach ( callbackInfo in level.onPostAutoBalanceCallbacks )
+		{
+			callbackInfo.func.acall( [callbackInfo.scope, player, currentTeam, newTeam ] )
+		}
+	}
+}
+
+function ShouldAutoBalancePlayer( player )
+{
+	if ( !GamePlayingOrSuddenDeath() )
+		return false
+
+	if ( GetGameState() >= eGameState.Postmatch )
+		return false
+
+	if ( GameRules.GetGameMode() == COOPERATIVE )
+		return false
+
+	if ( GAMETYPE == FFA )
+		return false
+
+	if ( player.s.respawnCount < 1 )
+		return false
+
+	return true
+}
+
+function PostAutobalanceThink( player )
+{
+	wait 2
+
+	if ( player )
+		player.s.forceDisableFlagTouch = false
 }
 
 function GetEmbarkPlayer( titan )
@@ -2989,6 +3058,18 @@ function NotifyClientsOfTeamChange( player, oldTeam, newTeam )
 	{
 		//if ( ent != player )
 		Remote.CallFunction_Replay( ent, "ServerCallback_PlayerChangedTeams", playerEHandle, oldTeam, newTeam )
+
+		if ( player != ent )
+		{
+			if ( ent.GetTeam() == oldTeam )
+				MessageToPlayer( ent, eEventNotifications.TeammateAutobalanced, null, null )
+			else if ( ent.GetTeam() == newTeam )
+				MessageToPlayer( ent, eEventNotifications.EnemyAutobalanced, null, null )
+		}
+		else
+		{
+			MessageToPlayer( ent, eEventNotifications.YouWereAutobalanced, null, null )
+		}
 	}
 }
 
@@ -3060,7 +3141,8 @@ function ObserverEntities( player )
 	player.SetObserverTarget( null ) // makes code look for a player to chase
 }
 
-
+// This doesnt even do anything as far as i can tell
+/*
 if ( !reloadingScripts )
 {
 	level.megaMaps <- {}
@@ -3082,16 +3164,17 @@ if ( !reloadingScripts )
 	level.megaMaps[ "mp_weapon_mega15" ] <- "mp_titanweapon_arc_cannon"
 	level.megaMaps[ "mp_weapon_mega16" ] <- "mp_titanweapon_40mm"
 }
+*/
 
 function CodeCallback_GetWeaponDamageSourceId( weapon )
 {
 	local classname = weapon.GetClassname()
 
 	//Assert( classname in getconsttable().eDamageSourceId, classname + " not added to eDamageSourceId enum" )
-	if ( classname in level.megaMaps )
-	{
-		classname = level.megaMaps[ classname ]
-	}
+	//if ( classname in level.megaMaps )
+	//{
+	//	classname = level.megaMaps[ classname ]
+	//}
 	local damageSourceInt = getconsttable().eDamageSourceId[ classname ]
 
 	Assert( damageSourceInt in damageSourceStrings, classname + " not added to damageSourceStrings table" )
@@ -3103,7 +3186,6 @@ function CodeCallback_GetWeaponDamageSourceId( weapon )
 
 function CheckForEmptyTeamVictory()
 {
-	return
 	if ( GetMapName() == "mp_npe" )
 		return
 	if ( GetDeveloperLevel() )
@@ -3537,5 +3619,3 @@ function SaveScoreForMapStars( player )
 
 
 main()
-
-
