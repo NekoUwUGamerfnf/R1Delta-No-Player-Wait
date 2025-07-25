@@ -2306,12 +2306,13 @@ function AutoBalancePlayer_Delayed( player, delay, forceSwitch = false )
 	MessageToPlayer( player, eEventNotifications.YouWillBeAutobalanced, null, Time() + delay )
 	wait delay
 
-	AutoBalancePlayer( player, forceSwitch )
+	if ( IsValid( player ) )
+		AutoBalancePlayer( player, forceSwitch )
 }
 
 function AutoBalancePlayer( player, forceSwitch = false )
 {
-	if ( !ShouldAutoBalancePlayer( player ) )
+	if ( !ShouldAutoBalancePlayer( player, forceSwitch ) )
 		return
 
 	local currentTeam = player.GetTeam()
@@ -2332,7 +2333,21 @@ function AutoBalancePlayer( player, forceSwitch = false )
 		// For things like dropping the CTF flag before switching teams
 		foreach ( callbackInfo in level.onPreAutoBalanceCallbacks )
 		{
-			callbackInfo.func.acall( [callbackInfo.scope, player, currentTeam, otherTeam ] )
+			callbackInfo.func.acall( [ callbackInfo.scope, player, currentTeam, otherTeam ] )
+		}
+
+		// If the player is rodeoing someone, friendly or not, kick them out
+		if ( GetTitanSoulBeingRodeoed( player ) != null )
+			player.Signal( "RodeoOver" )
+
+		if ( isTitan )
+		{
+			local rodeoEnt = GetPlayerRodeoing( player )
+
+			// If someone is rodeoing that player, kick them out too
+			// Should also works with Spectres
+			if ( rodeoEnt != null )
+				rodeoEnt.Signal( "RodeoOver" )
 		}
 
 		// Store pet titan before switching
@@ -2411,21 +2426,21 @@ function AutoBalancePlayer( player, forceSwitch = false )
 
 		NotifyClientsOfTeamChange( player, currentTeam, newTeam ) // Notify clients about the team change
 
-		thread PostAutobalanceThink( player )
+		thread PostAutoBalanceThink( player )
 
 		foreach ( callbackInfo in level.onPostAutoBalanceCallbacks )
 		{
-			callbackInfo.func.acall( [callbackInfo.scope, player, currentTeam, newTeam ] )
+			callbackInfo.func.acall( [ callbackInfo.scope, player, currentTeam, newTeam ] )
 		}
 	}
 }
 
-function ShouldAutoBalancePlayer( player )
+function ShouldAutoBalancePlayer( player, forceSwitch )
 {
 	if ( !GamePlayingOrSuddenDeath() )
 		return false
 
-	if ( GetGameState() >= eGameState.Postmatch )
+	if ( GetGameState() >= eGameState.Epilogue )
 		return false
 
 	if ( GameRules.GetGameMode() == COOPERATIVE )
@@ -2437,10 +2452,17 @@ function ShouldAutoBalancePlayer( player )
 	if ( player.s.respawnCount < 1 )
 		return false
 
+	if ( !forceSwitch )
+	{
+		// Game is about to end anyways
+		if ( GetMatchProgress() >= 90 )
+			return false
+	}
+
 	return true
 }
 
-function PostAutobalanceThink( player )
+function PostAutoBalanceThink( player )
 {
 	wait 2
 
@@ -3186,7 +3208,6 @@ function CodeCallback_GetWeaponDamageSourceId( weapon )
 
 function CheckForEmptyTeamVictory()
 {
-	return
 	if ( GetMapName() == "mp_npe" )
 		return
 	if ( GetDeveloperLevel() )
@@ -3620,3 +3641,5 @@ function SaveScoreForMapStars( player )
 
 
 main()
+
+
