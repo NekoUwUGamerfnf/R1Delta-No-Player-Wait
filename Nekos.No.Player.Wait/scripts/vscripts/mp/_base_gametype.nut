@@ -3642,5 +3642,3 @@ function SaveScoreForMapStars( player )
 
 
 main()
-
-
