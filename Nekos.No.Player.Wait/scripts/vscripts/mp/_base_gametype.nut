@@ -3221,6 +3221,7 @@ function CodeCallback_GetWeaponDamageSourceId( weapon )
 
 function CheckForEmptyTeamVictory()
 {
+	return
 	if ( GetMapName() == "mp_npe" )
 		return
 	if ( GetDeveloperLevel() )
