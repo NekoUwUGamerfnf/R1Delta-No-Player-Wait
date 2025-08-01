@@ -2676,6 +2676,8 @@ function CodeCallback_OnClientConnectionStarted( player )
 
 	player.s.lastNagTime <- 0
 
+	player.s.forceDisableFlagTouch <- false
+
 	Assert( !player._entityVars )
 	InitEntityVars( player )
 
@@ -3219,7 +3221,6 @@ function CodeCallback_GetWeaponDamageSourceId( weapon )
 
 function CheckForEmptyTeamVictory()
 {
-	return
 	if ( GetMapName() == "mp_npe" )
 		return
 	if ( GetDeveloperLevel() )
@@ -3653,3 +3654,5 @@ function SaveScoreForMapStars( player )
 
 
 main()
+
+
